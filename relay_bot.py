@@ -25,7 +25,9 @@ async def main():
     if not code:
         print("کد تایید از متغیر محیطی در دسترس نیست.")
         return
-    
+    else:
+        print(f"کد تایید دریافت شد: {code}")
+
     # شروع ارتباط با تلگرام
     await client.start(PHONE, code_callback=lambda: code)
     print("✅ ربات متصل شد و آماده دریافت پیام‌هاست.")
