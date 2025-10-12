@@ -1,3 +1,4 @@
+import os
 import asyncio
 from telethon import TelegramClient, events
 
@@ -18,7 +19,15 @@ ADD_TEXT = "💢@Dastavalkhabar"
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 async def main():
-    await client.start(PHONE)
+    # خواندن کد تایید از متغیر محیطی
+    code = os.getenv('TELEGRAM_CODE')
+
+    if not code:
+        print("کد تایید از متغیر محیطی در دسترس نیست.")
+        return
+    
+    # شروع ارتباط با تلگرام
+    await client.start(PHONE, code_callback=lambda: code)
     print("✅ ربات متصل شد و آماده دریافت پیام‌هاست.")
 
     @client.on(events.NewMessage(chats=CHANNEL_SRC))
