@@ -1,0 +1,148 @@
+import telebot
+import re
+import time
+from threading import Timer
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# 🎯 توکن ربات
+BOT_TOKEN = "8037874043:AAHDEORIzamnxuxK1m0TWgS-C4UDlLIZ42Y"
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+
+# 📡 شناسه و لینک کانال‌ها
+channel_ids = [
+    '-1001293990413', '-1002303168889', '-1002016974877',
+    '-1002295560799', '-1002104900802', '-1002005207697',
+    '-1002120965536', '-1002135081737', '-1002176340230',
+    '-1002384702556', '-1002442815941', '-1003164391143'  # جدید
+]
+
+channel_links = [
+    '💢@Dastavalkhabar', '💢@Ravayatno_ir', '✅@Sobheiranian',
+    '✅@Rrouydadnu', '🆔@Tabriztopkhabar', '🆔@Sobhe_mashhad',
+    '🆔@Nesfeh_jahaan', '🆔@Asre_shiraz', '✅@Reisjomhor',
+    '✅@Asriranno', '✅@Akhbarjanjaly', '🅾️@eghtesadedovom'  # جدید
+]
+
+# 👮 شناسه ادمین‌ها
+ADMIN_USER_IDS = [262567832]
+
+# 🧾 صف پیام‌ها
+queue = []
+
+# 🧹 پاکسازی لینک‌ها و آی‌دی‌ها از متن
+def remove_hyperlinks_and_links(text):
+    if not text:
+        return ''
+    patterns = [
+        r"http\S+", r"www\S+", r"@\S+", r"tn\.ai/\S*", r"ana\.ir\S*",
+        r"dnws\.ir\S*", r"tv\.irna\.ir\S*", r"🔗", r"✅", r"🆔", r"🅾️",
+        r"Link", r"\| #kamelat"
+    ]
+    for p in patterns:
+        text = re.sub(p, '', text)
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    return "\n".join(lines)
+
+# 📤 ارسال پیام به تمام کانال‌ها
+def send_message_to_channels(text, msg_type, file_id=None):
+    for ch_id, link in zip(channel_ids, channel_links):
+        try:
+            final_text = f"{text}\n\n{link}"
+            if msg_type == 'text':
+                bot.send_message(ch_id, final_text)
+            elif msg_type == 'photo':
+                bot.send_photo(ch_id, file_id, caption=final_text)
+            elif msg_type == 'video':
+                bot.send_video(ch_id, file_id, caption=final_text)
+            elif msg_type == 'document':
+                bot.send_document(ch_id, file_id, caption=final_text)
+            elif msg_type == 'animation':
+                bot.send_animation(ch_id, file_id, caption=final_text)
+            elif msg_type == 'sticker':
+                bot.send_sticker(ch_id, file_id)
+            time.sleep(1)  # جلوگیری از Flood Error
+        except Exception as e:
+            print(f"❌ خطا در ارسال به {link}: {e}")
+
+# 🧩 دکمه ارسال آنی
+def get_send_keyboard():
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🚀 ارسال آنی", callback_data="send_now"))
+    return kb
+
+# 🤖 هندل همه‌ی پیام‌ها
+@bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'animation', 'sticker'])
+def handle_message(message):
+    user_id = message.from_user.id
+    chat_id = message.chat.id
+
+    if user_id not in ADMIN_USER_IDS:
+        bot.send_message(chat_id, "⛔ شما مجاز به ارسال نیستید.")
+        return
+
+    # ✅ جلوگیری از پردازش دوباره (برای رفع دوبار ارسال دکمه)
+    if getattr(message, "processed", False):
+        return
+    message.processed = True
+
+    msg_type = message.content_type
+    file_id, cleaned = None, ""
+
+    try:
+        if msg_type == 'text':
+            cleaned = remove_hyperlinks_and_links(message.text)
+        else:
+            cleaned = remove_hyperlinks_and_links(message.caption or "")
+            if msg_type == 'photo':
+                file_id = message.photo[-1].file_id
+            elif msg_type == 'video':
+                file_id = message.video.file_id
+            elif msg_type == 'document':
+                file_id = message.document.file_id
+            elif msg_type == 'animation':
+                file_id = message.animation.file_id
+            elif msg_type == 'sticker':
+                file_id = message.sticker.file_id
+                cleaned = ""
+
+        queue.append((cleaned, msg_type, file_id, chat_id))
+        bot.send_message(chat_id, f"✅ {msg_type} در صف ارسال قرار گرفت.", reply_markup=get_send_keyboard())
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ خطا در پردازش: {e}")
+
+# 🚀 دکمه ارسال آنی
+@bot.callback_query_handler(func=lambda c: c.data == "send_now")
+def send_now_callback(call):
+    if call.from_user.id not in ADMIN_USER_IDS:
+        bot.answer_callback_query(call.id, "⛔ شما مجاز نیستید.")
+        return
+
+    if not queue:
+        bot.send_message(call.message.chat.id, "📭 صف خالی است.")
+        return
+
+    msg = queue.pop(-1)
+    send_message_to_channels(*msg[:-1])
+    bot.send_message(call.message.chat.id, "✅ پیام فوراً ارسال شد.")
+
+# 🕒 ارسال خودکار هر ۳۰ دقیقه
+def process_queue():
+    if queue:
+        msg = queue.pop(0)
+        send_message_to_channels(*msg[:-1])
+        bot.send_message(msg[-1], "📨 پیام زمان‌بندی‌شده ارسال شد.")
+    Timer(1800, process_queue).start()
+
+# 🔰 تست /start
+@bot.message_handler(commands=['start'])
+def start_cmd(message):
+    if message.from_user.id in ADMIN_USER_IDS:
+        bot.reply_to(message, "✅ ربات فعال است و آماده دریافت پیام.")
+    else:
+        bot.reply_to(message, "⛔ شما ادمین نیستید.")
+
+# 🚦 شروع ربات
+if __name__ == "__main__":
+    print("🤖 ربات با موفقیت اجرا شد و آماده دریافت پیام‌هاست...")
+    Timer(1800, process_queue).start()
+    bot.infinity_polling(timeout=30, long_polling_timeout=10)
